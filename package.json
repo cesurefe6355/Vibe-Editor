@@ -1,0 +1,35 @@
+{
+  "name": "ortak-kod-editoru",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Yjs ve Monaco ile gerçek zamanlı ortak HTML/CSS/JS editörü",
+  "main": "server.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "node server.cjs",
+    "dev:client": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "start": "node server.cjs"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "express": "^4.21.2",
+    "lib0": "^0.2.99",
+    "monaco-editor": "^0.52.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ws": "^8.18.0",
+    "y-monaco": "^0.1.6",
+    "y-protocols": "^1.0.6",
+    "y-websocket": "^2.0.4",
+    "yjs": "^13.6.24"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "vite": "^6.0.7"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
