@@ -1,8 +1,8 @@
 {
-  "name": "ortak-kod-editoru",
-  "version": "1.0.0",
+  "name": "vibe-editor",
+  "version": "2.0.0",
   "private": true,
-  "description": "Yjs ve Monaco ile gerçek zamanlı ortak HTML/CSS/JS editörü",
+  "description": "Gerçek zamanlı ortak kod editörü — Yjs, Monaco, React",
   "main": "server.cjs",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",

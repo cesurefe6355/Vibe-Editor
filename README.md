@@ -1,45 +1,40 @@
-# Ortak IDE — ilk çalışan sürüm
+# Vibe Editor
 
-Monaco Editor + Yjs ile HTML, CSS ve JavaScript için gerçek zamanlı ortak kod editörü.
+Tarayıcıda, birden fazla kişiyle aynı anda kod yazma. React + Monaco + Yjs, Node/Express + ws.
 
-## Gereksinimler
-
-- Node.js 20 veya üzeri
-- npm
-- İnternetten erişim için Node.js uygulaması çalıştırabilen bir hosting (Render, Railway veya VPS gibi)
-
-## Bilgisayarda çalıştırma
+## Çalıştırma
 
 ```bash
 npm install
-npm run dev
+npm run dev          # http://localhost:5173
 ```
 
-Arayüz `http://localhost:5173` adresinde açılır. Geliştirme sunucusu ve WebSocket eşzamanlama sunucusu birlikte çalışır. Test etmek için bağlantıyı iki farklı tarayıcı penceresinde açın ve **Davet bağlantısı** düğmesiyle aynı oda bağlantısını diğerine kopyalayın.
+Üretim: `npm install && npm run build && npm start` (`NODE_ENV=production`).
 
-## Üretim sürümü
+## Akış
 
-```bash
-npm install
-npm run build
-npm start
-```
+1. İlk girişte **ad** ve imleç rengi seçilir (tarayıcıda saklanır).
+2. Ana sayfada oda oluşturulur (isteğe bağlı parola) ya da kod/bağlantı ile odaya katılınır.
+3. Çalışma alanında dosyalar ortak düzenlenir; herkesin imleci, **altında adıyla** görünür.
 
-`NODE_ENV=production` ayarıyla sunucu `dist` klasörünü sunar ve aynı portta `/sync` WebSocket bağlantılarını kabul eder. Hosting sağlayıcısının `PORT` ortam değişkeni otomatik kullanılır.
+## Özellikler
 
-## Render üzerinde yayınlama
+- Dosya ağacı (klasörler `js/app.js` gibi yazılarak oluşur), sekmeler, yeni dosya / silme
+- **Dosya yükleme**: düğme veya sürükle-bırak (html, css, js, json, md, txt, svg, png, jpg, gif, webp…)
+- Canlı önizleme (yalıtılmış iframe, yüklenen görseller ve bağlı css/js dahil), yeniden boyutlandırılabilir
+- Katılımcı listesi, kimin hangi dosyada olduğu, kaydetme ve bağlantı durumu
+- Mobilde Dosyalar / Editör / Önizleme sekmeleri
+- Kalıcı kayıt: odalar `DATA_DIR` klasörüne yazılır (varsayılan `./data`)
+- Oda parolası (scrypt ile saklanır), hız sınırları, WebSocket origin kontrolü
 
-1. Bu klasörü bir GitHub deposuna yükleyin.
-2. Render'da **New → Web Service** ile depoyu bağlayın.
-3. Build Command: `npm install && npm run build`
-4. Start Command: `npm start`
-5. Environment: `NODE_ENV=production`
-6. Deploy tamamlanınca oluşan HTTPS adresini açın. WebSocket bağlantısı otomatik olarak `wss://` kullanır.
+## Render
 
-Ücretsiz hosting planları uykuya geçebilir veya kalıcı disk sunmayabilir. Bu ilk sürümde oda içerikleri sunucu belleğinde tutulur; sunucu yeniden başlarsa içerik kaybolabilir. Kalıcı kayıt bir sonraki aşamada eklenmelidir.
+Build: `npm install && npm run build` · Start: `npm start` · `NODE_ENV=production`
 
-## Önemli güvenlik sınırı
+Ücretsiz Render planında disk geçicidir; kalıcılık için bir **Disk** bağla ve `DATA_DIR`'i
+bağlama yoluna ayarla (ör. `/var/data`).
 
-Bu, geliştirme amaçlı bir MVP'dir. Oda bağlantısına sahip herkes odaya katılabilir ve kodu değiştirebilir. Kimlik doğrulama, oda sahibi izinleri, hız sınırı, kalıcı depolama ve kötüye kullanım koruması henüz yoktur. Gizli/özel kod paylaşmayın. Gerçek kullanım öncesinde bu kontrolleri ekleyin.
+## Sınırlar
 
-Önizleme, HTML/JS kodunu `sandbox="allow-scripts"` ile sınırlandırılmış bir iframe içinde çalıştırır. Bu bir güvenlik katmanıdır, ancak tek başına tam bir güvenlik garantisi değildir.
+Oda sahibi/rol ayrımı, kullanıcı hesabı ve sunucu tarafı Yjs içerik doğrulaması yoktur.
+Dosya başına en fazla 500 KB (metin) / 1 MB (görsel).
