@@ -13,7 +13,7 @@ import { Avatar, Logo } from "./App.jsx";
 import {
   ACCEPT, IMAGE_EXT, MAX_IMAGE_BYTES, MAX_TEXT_BYTES, STARTER_FILES, TEXT_EXT,
   buildPreview, buildTree, extOf, isImageName, isSafeImage, languageOf, readFiles,
-  roomPassword, safeColor, sanitizeFileName, uniqueName, validateFileName
+  roomPassword, safeColor, sanitizeFileName, uniqueName, validateFileName, validateFolderName, pathConflict
 } from "./lib.js";
 
 // Monaco'yu CDN yerine paketten ve kendi worker'larıyla çalıştır.
@@ -41,8 +41,47 @@ const EDITOR_OPTIONS = {
   renderLineHighlight: "line",
   cursorBlinking: "smooth",
   smoothScrolling: true,
-  bracketPairColorization: { enabled: true }
+  bracketPairColorization: { enabled: true },
+  quickSuggestions: { other: true, comments: false, strings: true },
+  quickSuggestionsDelay: 80,
+  suggestOnTriggerCharacters: true,
+  tabCompletion: "on",
+  acceptSuggestionOnEnter: "on",
+  snippetSuggestions: "top",
+  wordBasedSuggestions: "matchingDocuments",
+  suggest: { showWords: true, showSnippets: true, preview: true }
 };
+
+monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+  allowJs: true,
+  allowNonTsExtensions: true,
+  target: monaco.languages.typescript.ScriptTarget.ESNext,
+  module: monaco.languages.typescript.ModuleKind.ESNext,
+  moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+  jsx: monaco.languages.typescript.JsxEmit.React
+});
+monaco.languages.typescript.javascriptDefaults.setEagerModelSync(true);
+monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true);
+
+// HTML etiketini < yazmadan da Tab ile bir şablona tamamla.
+monaco.languages.registerCompletionItemProvider("html", {
+  provideCompletionItems(model, position) {
+    const word = model.getWordUntilPosition(position);
+    const before = model.getLineContent(position.lineNumber).slice(0, word.startColumn - 1);
+    if (!word.word || before.trim()) return { suggestions: [] };
+    const tags = ["div", "span", "p", "h1", "h2", "h3", "main", "section", "header", "footer", "nav", "button", "ul", "li", "form", "label", "article"];
+    return {
+      suggestions: tags.map((tag) => ({
+        label: tag,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        detail: "HTML etiketi",
+        insertText: `<${tag}>$0</${tag}>`,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn)
+      }))
+    };
+  }
+});
 
 const defineTheme = (m) =>
   m.editor.defineTheme("vibe", {
@@ -81,7 +120,7 @@ function badge(name) {
 
 /* ------------------------------- Dosya ağacı ------------------------------- */
 
-function TreeNode({ node, prefix, depth, active, collapsed, peersByFile, onOpen, onToggle, onDelete }) {
+function TreeNode({ node, prefix, depth, active, collapsed, peersByFile, onOpen, onToggle, onDelete, onAdd }) {
   return (
     <>
       {[...node.folders.entries()].map(([name, child]) => {
@@ -89,13 +128,18 @@ function TreeNode({ node, prefix, depth, active, collapsed, peersByFile, onOpen,
         const closed = collapsed.has(key);
         return (
           <div key={key}>
-            <button className="tree-row folder" style={{ paddingLeft: 10 + depth * 14 }} onClick={() => onToggle(key)}>
+            <div className="tree-row folder" style={{ paddingLeft: 10 + depth * 14 }}>
+              <button className="tree-main" onClick={() => onToggle(key)} aria-expanded={!closed}>
               <span className={`caret ${closed ? "" : "open"}`}>›</span>
               <span className="tree-name">{name}</span>
-            </button>
+              </button>
+              <button className="tree-del" title="Klasöre dosya ekle" aria-label={`${key} klasörüne dosya ekle`} onClick={() => onAdd("file", key)}>＋</button>
+              <button className="tree-del" title="Alt klasör oluştur" aria-label={`${key} altında klasör oluştur`} onClick={() => onAdd("folder", key)}>▣</button>
+              <button className="tree-del" title="Klasörü sil" aria-label={`${key} klasörünü sil`} onClick={() => onDelete(key)}>×</button>
+            </div>
             {!closed && (
               <TreeNode node={child} prefix={key} depth={depth + 1} active={active} collapsed={collapsed}
-                peersByFile={peersByFile} onOpen={onOpen} onToggle={onToggle} onDelete={onDelete} />
+                peersByFile={peersByFile} onOpen={onOpen} onToggle={onToggle} onDelete={onDelete} onAdd={onAdd} />
             )}
           </div>
         );
@@ -128,6 +172,7 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
   const [synced, setSynced] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const [fileNames, setFileNames] = useState([]);
+  const [folderNames, setFolderNames] = useState([]);
   const [peers, setPeers] = useState([]);
   const [openTabs, setOpenTabs] = useState(["index.html"]);
   const [activeFile, setActiveFile] = useState("index.html");
@@ -135,12 +180,14 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [previewHtml, setPreviewHtml] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const previewRef = useRef(null);
   const [previewW, setPreviewW] = useState(460);
   const [resizing, setResizing] = useState(false);
   const [mobilePane, setMobilePane] = useState("editor");
   const [saveState, setSaveState] = useState("saved");
   const [toast, setToast] = useState(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(null);
   const [newName, setNewName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [collapsed, setCollapsed] = useState(() => new Set());
@@ -164,10 +211,12 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
       maxBackoffTime: 4000
     });
     const files = ydoc.getMap("files");
+    const folders = ydoc.getMap("folders");
     const meta = ydoc.getMap("meta");
     let saveTimer = null;
 
     const syncNames = () => setFileNames(Array.from(files.keys()));
+    const syncFolders = () => setFolderNames(Array.from(folders.keys()));
     const syncPeers = () => {
       const list = [];
       provider.awareness.getStates().forEach((state, id) => {
@@ -193,6 +242,7 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
         });
       }
       syncNames();
+      syncFolders();
       setSynced(true);
     };
     const onUpdate = (_update, origin) => {
@@ -205,15 +255,17 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
     provider.on("status", ({ status: s }) => setStatus(s));
     provider.on("sync", onSync);
     files.observe(syncNames);
+    folders.observe(syncFolders);
     provider.awareness.on("change", syncPeers);
     ydoc.on("update", onUpdate);
     const timeout = setTimeout(() => setTimedOut(true), 10000);
-    setSession({ ydoc, provider, files, meta });
+    setSession({ ydoc, provider, files, folders, meta });
 
     return () => {
       clearTimeout(timeout);
       clearTimeout(saveTimer);
       files.unobserve(syncNames);
+      folders.unobserve(syncFolders);
       provider.awareness.off("change", syncPeers);
       ydoc.off("update", onUpdate);
       provider.destroy();
@@ -256,10 +308,33 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
   const activeIsText = activeEntry instanceof Y.Text;
   const activeImage = activeEntry && !activeIsText && isSafeImage(activeEntry.dataUrl) ? activeEntry : null;
 
+  // Açılmamış dosyalar da dil servisinde bulunur; import ve proje önerileri çalışır.
+  useEffect(() => {
+    if (!session || !synced) return;
+    const syncModels = () => {
+      const live = new Set();
+      session.files.forEach((entry, name) => {
+        if (!(entry instanceof Y.Text)) return;
+        const uri = monaco.Uri.parse(`inmemory://vibe/${roomId}/${name}`);
+        live.add(uri.toString());
+        const model = monaco.editor.getModel(uri) || monaco.editor.createModel(entry.toString(), languageOf(name), uri);
+        // Açık modeli MonacoBinding günceller; imleci ve undo geçmişini koru.
+        if (model !== editor?.getModel() && model.getValue() !== entry.toString()) model.setValue(entry.toString());
+      });
+      monaco.editor.getModels().forEach((model) => {
+        if (model.uri.authority === "vibe" && model.uri.path.startsWith(`/${roomId}/`) && !live.has(model.uri.toString())) model.dispose();
+      });
+    };
+    syncModels();
+    session.files.observeDeep(syncModels);
+    return () => session.files.unobserveDeep(syncModels);
+  }, [session, synced, editor, roomId]);
+
   useEffect(() => {
     if (!editor || !session || !activeIsText) return;
     const uri = monaco.Uri.parse(`inmemory://vibe/${roomId}/${activeFile}`);
     const model = monaco.editor.getModel(uri) || monaco.editor.createModel("", languageOf(activeFile), uri);
+    monaco.editor.setModelLanguage(model, languageOf(activeFile));
     editor.setModel(model);
     const binding = new MonacoBinding(activeEntry, model, new Set([editor]), session.provider.awareness);
     const sub = editor.onDidChangeCursorPosition((e) => setCursorPos({ line: e.position.lineNumber, col: e.position.column }));
@@ -290,6 +365,34 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
       session.ydoc.off("update", onChange);
     };
   }, [session, synced, refreshPreview]);
+
+  useEffect(() => {
+    const onFullscreen = () => setPreviewExpanded(document.fullscreenElement === previewRef.current);
+    const onKey = (event) => { if (event.key === "Escape" && !document.fullscreenElement) setPreviewExpanded(false); };
+    document.addEventListener("fullscreenchange", onFullscreen);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreen);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  const togglePreviewFullscreen = async () => {
+    if (previewExpanded) {
+      if (document.fullscreenElement === previewRef.current) await document.exitFullscreen();
+      setPreviewExpanded(false);
+    } else {
+      setPreviewExpanded(true);
+      try { await previewRef.current?.requestFullscreen?.(); } catch { /* Desteklenmezse pencereyi kapla. */ }
+    }
+  };
+
+  const closePreview = async () => {
+    if (document.fullscreenElement === previewRef.current) await document.exitFullscreen();
+    setPreviewExpanded(false);
+    setPreviewOpen(false);
+    setMobilePane("editor");
+  };
 
   /* ---- Uzak imleçler: renk + imlecin altında ad etiketi ---- */
   const cursorCss = useMemo(
@@ -324,27 +427,53 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
     if (activeFile === name) setActiveFile(rest[Math.max(0, idx - 1)] || null);
   };
 
+  const startAdding = (kind, prefix = "") => {
+    setAdding(kind);
+    setNewName(prefix);
+    if (prefix) setCollapsed((previous) => {
+      const next = new Set(previous);
+      next.delete(prefix);
+      return next;
+    });
+  };
+
   const addFile = (e) => {
     e.preventDefault();
+    if (!session || !synced) return;
     const name = newName.trim();
-    const problem = validateFileName(name);
+    const problem = (adding === "folder" ? validateFolderName(name) : validateFileName(name)) || pathConflict(name, adding, session.files, session.folders);
     if (problem) return notify(problem, "error");
+    if (adding === "folder") {
+      session.folders.set(name, true);
+      setNewName("");
+      setAdding(null);
+      return;
+    }
     if (isImageName(name)) return notify("Görselleri “Yükle” düğmesiyle ekleyebilirsin.", "error");
     if (session.files.has(name)) return notify("Bu adda bir dosya zaten var.", "error");
     session.files.set(name, new Y.Text());
     setNewName("");
-    setAdding(false);
+    setAdding(null);
     openFile(name);
   };
 
   const removeFile = () => {
-    session.files.delete(confirmDelete);
+    session.ydoc.transact(() => {
+      if (confirmDelete.endsWith("/")) {
+        for (const name of session.files.keys()) if (name.startsWith(confirmDelete)) session.files.delete(name);
+        for (const name of session.folders.keys()) if (`${name}/`.startsWith(confirmDelete)) session.folders.delete(name);
+      } else session.files.delete(confirmDelete);
+    });
     setConfirmDelete(null);
   };
 
   const upload = async (list) => {
     if (!session) return;
-    const taken = new Set(session.files.keys());
+    const taken = new Set([...session.files.keys(), ...session.folders.keys()]);
+    for (const path of [...taken]) {
+      const parts = path.split("/");
+      parts.slice(0, -1).forEach((_part, i) => taken.add(parts.slice(0, i + 1).join("/")));
+    }
     let added = 0;
     for (const file of Array.from(list)) {
       const ext = extOf(file.name);
@@ -413,7 +542,7 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
   };
 
   /* ---- Türetilmiş değerler ---- */
-  const tree = useMemo(() => buildTree(fileNames), [fileNames]);
+  const tree = useMemo(() => buildTree(fileNames, folderNames), [fileNames, folderNames]);
   const peersByFile = useMemo(() => {
     const map = new Map();
     peers.forEach((p) => p.file && map.set(p.file, [...(map.get(p.file) || []), p]));
@@ -461,7 +590,8 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
           <div className="side-head">
             <span>DOSYALAR</span>
             <div>
-              <button className="icon-btn" title="Yeni dosya" aria-label="Yeni dosya" onClick={() => setAdding((v) => !v)}>＋</button>
+              <button className="icon-btn" disabled={!synced} title="Yeni dosya" aria-label="Yeni dosya" onClick={() => startAdding("file")}>＋</button>
+              <button className="icon-btn" disabled={!synced} title="Yeni klasör" aria-label="Yeni klasör" onClick={() => startAdding("folder")}>▣</button>
               <button className="icon-btn" title="Dosya yükle" aria-label="Dosya yükle" onClick={() => fileInput.current?.click()}>⇪</button>
             </div>
           </div>
@@ -469,15 +599,16 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
 
           {adding && (
             <form className="new-file" onSubmit={addFile}>
-              <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="ör. js/app.js" aria-label="Yeni dosya adı" />
+              <input key={adding} autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setAdding(null); }} placeholder={adding === "folder" ? "ör. src/components" : "ör. js/app.js"} aria-label={adding === "folder" ? "Yeni klasör adı" : "Yeni dosya adı"} />
               <button className="btn primary sm">Ekle</button>
+              <button type="button" className="icon-btn" aria-label="Oluşturmaktan vazgeç" onClick={() => setAdding(null)}>×</button>
             </form>
           )}
 
           <nav className="tree" aria-label="Proje dosyaları">
             {synced ? (
               <TreeNode node={tree} prefix="" depth={0} active={activeFile} collapsed={collapsed} peersByFile={peersByFile}
-                onOpen={openFile} onToggle={toggleFolder} onDelete={setConfirmDelete} />
+                onOpen={openFile} onToggle={toggleFolder} onDelete={setConfirmDelete} onAdd={startAdding} />
             ) : <p className="muted pad">Yükleniyor…</p>}
           </nav>
 
@@ -518,7 +649,7 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
 
           <div className="editor-stage">
             <div className={`editor-wrap ${showEditor ? "" : "hidden"}`}>
-              <Editor height="100%" theme="vibe" defaultValue="" language="plaintext" loading={null}
+              <Editor height="100%" theme="vibe" defaultValue="" loading={null}
                 beforeMount={defineTheme} onMount={(ed) => setEditor(ed)} options={EDITOR_OPTIONS} />
             </div>
 
@@ -560,12 +691,13 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
         {/* --- Önizleme --- */}
         {previewOpen && <div className="resizer" onPointerDown={startResize} role="separator" aria-orientation="vertical" />}
         {previewOpen ? (
-          <aside className="preview" style={{ "--pw": `${previewW}px` }}>
+          <aside ref={previewRef} className={`preview ${previewExpanded ? "expanded" : ""}`} style={{ "--pw": `${previewW}px` }}>
             <div className="preview-head">
               <strong>CANLI ÖNİZLEME</strong>
               <div>
                 <button className="icon-btn" title="Yenile" aria-label="Önizlemeyi yenile" onClick={refreshPreview}>↻</button>
-                <button className="icon-btn" title="Kapat" aria-label="Önizlemeyi kapat" onClick={() => setPreviewOpen(false)}>×</button>
+                <button className="icon-btn" title={previewExpanded ? "Tam ekrandan çık" : "Tam ekran"} aria-label={previewExpanded ? "Tam ekrandan çık" : "Önizlemeyi tam ekran yap"} onClick={togglePreviewFullscreen}>{previewExpanded ? "⊡" : "⛶"}</button>
+                <button className="icon-btn" title="Kapat" aria-label="Önizlemeyi kapat" onClick={closePreview}>×</button>
               </div>
             </div>
             {previewHtml ? (
@@ -590,7 +722,7 @@ export default function Workspace({ roomId, roomName, locked, user, onLeave, onP
       {confirmDelete && (
         <div className="modal-back" onClick={() => setConfirmDelete(null)}>
           <div className="card modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <h2>Dosya silinsin mi?</h2>
+            <h2>{confirmDelete.endsWith("/") ? "Klasör ve içindekiler silinsin mi?" : "Dosya silinsin mi?"}</h2>
             <p className="muted"><code>{confirmDelete}</code> herkes için ortak projeden silinecek.</p>
             <div className="row-actions">
               <button className="btn ghost" onClick={() => setConfirmDelete(null)}>Vazgeç</button>

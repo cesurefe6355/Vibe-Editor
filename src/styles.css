@@ -163,6 +163,8 @@ h1, h2, h3, p { margin: 0; }
 .preview { width: var(--pw); flex: none; display: flex; flex-direction: column; background: #fff; position: relative; }
 .preview-head { flex: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 8px 6px 14px; background: var(--panel); font-size: 11px; letter-spacing: .1em; color: var(--muted); border-bottom: 1px solid var(--line); }
 .preview iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+.preview.expanded, .preview:fullscreen { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 95; display: flex; }
+.preview iframe { min-height: 0; }
 .preview .empty { background: var(--panel); }
 .show-preview { position: absolute; right: 14px; bottom: 40px; z-index: 10; background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: 9px 16px; font-weight: 600; box-shadow: 0 6px 20px #0008; }
 

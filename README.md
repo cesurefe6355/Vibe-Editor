@@ -19,9 +19,10 @@ npm run dev          # http://localhost:5173
 
 ## Özellikler
 
-- Dosya ağacı (klasörler `js/app.js` gibi yazılarak oluşur), sekmeler, yeni dosya / silme
+- Dosya ağacı, boş klasör ve alt klasör oluşturma, klasöre dosya ekleme, sekmeler, dosya / klasör silme
 - **Dosya yükleme**: düğme veya sürükle-bırak (html, css, js, json, md, txt, svg, png, jpg, gif, webp…)
-- Canlı önizleme (yalıtılmış iframe, yüklenen görseller ve bağlı css/js dahil), yeniden boyutlandırılabilir
+- Canlı önizleme (yalıtılmış iframe, yüklenen görseller ve bağlı css/js dahil), yeniden boyutlandırma ve tam ekran
+- Dosya diline göre otomatik kod önerileri; Tab veya Enter ile tamamlama
 - Katılımcı listesi, kimin hangi dosyada olduğu, kaydetme ve bağlantı durumu
 - Mobilde Dosyalar / Editör / Önizleme sekmeleri
 - Kalıcı kayıt: odalar `DATA_DIR` klasörüne yazılır (varsayılan `./data`)

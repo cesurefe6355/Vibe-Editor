@@ -93,6 +93,25 @@ export function validateFileName(name) {
   return "";
 }
 
+export function validateFolderName(name) {
+  if (!name) return "Klasör adı boş olamaz.";
+  if (name.length > 60 || !NAME_RE.test(name) || name.split("/").some((part) => part === ".")) {
+    return "Klasör adında harf, rakam, - _ . ve alt klasör için / kullanabilirsin (en fazla 4 seviye, 60 karakter).";
+  }
+  return "";
+}
+
+export function pathConflict(name, kind, files, folders) {
+  const parents = name.split("/").slice(0, -1);
+  if (parents.some((_part, i) => files.has(parents.slice(0, i + 1).join("/")))) {
+    return "Bu yolun üst klasörlerinden biriyle aynı adda bir dosya var.";
+  }
+  if (files.has(name)) return "Bu adda bir dosya zaten var.";
+  const isFolder = folders.has(name) || [...files.keys(), ...folders.keys()].some((path) => path.startsWith(`${name}/`));
+  if (isFolder) return kind === "folder" ? "Bu adda bir klasör zaten var." : "Bu adda bir klasör var.";
+  return "";
+}
+
 const TR = { ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u", Ç: "C", Ğ: "G", İ: "I", Ö: "O", Ş: "S", Ü: "U" };
 export function sanitizeFileName(name) {
   return name
@@ -111,16 +130,17 @@ export function uniqueName(name, taken) {
 }
 
 // Düz dosya listesinden klasör ağacı üretir.
-export function buildTree(names) {
+export function buildTree(names, folders = []) {
   const root = { folders: new Map(), files: [] };
-  for (const full of [...names].sort((a, b) => a.localeCompare(b, "tr"))) {
+  const paths = [...names, ...folders.map((name) => `${name}/`)];
+  for (const full of paths.sort((a, b) => a.localeCompare(b, "tr"))) {
     const parts = full.split("/");
     let node = root;
     for (const part of parts.slice(0, -1)) {
       if (!node.folders.has(part)) node.folders.set(part, { folders: new Map(), files: [] });
       node = node.folders.get(part);
     }
-    node.files.push({ name: parts.at(-1), path: full });
+    if (parts.at(-1)) node.files.push({ name: parts.at(-1), path: full });
   }
   return root;
 }
